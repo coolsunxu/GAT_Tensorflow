@@ -16,7 +16,7 @@ class BatchMultiHeadGraphAttention(keras.Model): # 多头图注意力模型
 		self.initializer = initializers.GlorotUniform() # 初始化分布
 		self.w = tf.Variable(self.initializer(shape=[self.n_head, self.f_in, self.f_out], dtype=tf.float32)) # 自定义参数 权重
 		self.adj = []
-		self.fc = layers.Dense(1) # 求分数
+		self.fc = tf.Variable(self.initializer(shape=[self.n_head, 2*self.f_out, 1], dtype=tf.float32)) # 自定义参数 att
 		self.leaky_relu = layers.LeakyReLU(alpha=0.2) # 激活函数
 		self.softmax = layers.Softmax(axis=-1) # 归一层
 		self.dropout = layers.Dropout(rate=self.attn_dropout) # Dropout 层
@@ -36,7 +36,7 @@ class BatchMultiHeadGraphAttention(keras.Model): # 多头图注意力模型
 		return edge_index
 		
 	def call(self, h, edge_index): 
-		bs = h.shape[0] # [seq_len, bs]
+		bs = h.shape[0] # [bs,fin]
 		if self.add_self_loop: # 是否添加自环 
 			self.remove_self_loops(edge_index)
 			self.add_self_loops(edge_index, bs)
@@ -54,7 +54,8 @@ class BatchMultiHeadGraphAttention(keras.Model): # 多头图注意力模型
 			neighbors_node = tf.gather(h_prime,neighbors,axis=1) # [head,cbs,fout]
 			total_node = tf.concat((curr_node,neighbors_node),2) # [head,cbs,fout*2]
 			
-			att_node = self.leaky_relu(self.fc(tf.reshape(total_node,[-1,self.f_out*2])))
+			#att_node = self.leaky_relu(tf.matmul(total_node,self.fc))
+			att_node = self.leaky_relu(total_node@self.fc)
 			att_node = self.softmax(tf.reshape(att_node,[heads,n_neighbors])) # [head,cbs]
 			att_node = self.dropout(att_node)
 			att_node = tf.transpose(att_node,[1,0]) # 方便使用tf.scatter_nd函数
@@ -67,21 +68,35 @@ class BatchMultiHeadGraphAttention(keras.Model): # 多头图注意力模型
 			return output + self.bias
 		else:
 			return output
-"""
-heads = 1
-bs = 4
-fin = 8
-fout = 16
-
-a = tf.convert_to_tensor([[0,1,2,3,0,1,2,3,0,1,2,3,0],
-				  [1,0,1,2,2,2,3,0,3,3,0,1,0]],dtype=tf.int64)
+			
+# 生成领接矩阵
+def Get_Adj(bs):
+	import itertools
+	a = [[],[]]
+	list_indices = range(bs) # 行人列表
+	for i, j in itertools.permutations(list_indices, 2): # 行人-行人 两两全排列
+		a[0].append(i)
+		a[1].append(j)
+	return tf.convert_to_tensor(a,dtype=tf.int64)
+	
+import time
+heads = 12
+bs = 512
+fin = 256
+fout = 128
+a = Get_Adj(bs)
 h = tf.random.normal([bs,fin])
 model = BatchMultiHeadGraphAttention(n_head=heads, f_in=fin, f_out=fout, attn_dropout=0.5)
+start_time = time.time()  #开始时间
+out = model(h,a)
+end_time = time.time()   #结束时间
+print("time:%d"  % (end_time-start_time))
+print(out.shape)
 
+"""
 with tf.GradientTape(persistent=True) as tape: 
 	 out = model(h,a)
 	 loss = tf.reduce_sum(out)
 	 print(out.shape)
 print(tape.gradient(loss, model.trainable_variables))
 """
-
