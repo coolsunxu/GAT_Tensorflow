@@ -44,7 +44,7 @@ class BatchMultiHeadGraphAttention(keras.Model): # 多头图注意力模型
 		h_prime = tf.matmul(h, self.w) # [head,bs,fout]
 		
 		for i in range(h_prime.shape[1]): # for each node
-			neighbors = tf.gather(edge_index[1,:],tf.squeeze(tf.where(edge_index[0,:]==i))) # neighbors
+			neighbors = tf.gather(edge_index[1,:],tf.squeeze(tf.where(edge_index[0,:]==i)),0) # neighbors
 			if self.n_head == 1:
 				shape = tf.cast(tf.constant([bs]),dtype = tf.int64)
 			else :
@@ -56,7 +56,7 @@ class BatchMultiHeadGraphAttention(keras.Model): # 多头图注意力模型
 			
 			#att_node = self.leaky_relu(tf.matmul(total_node,self.fc))
 			att_node = self.leaky_relu(total_node@self.fc)
-			att_node = self.softmax(tf.reshape(att_node,[heads,n_neighbors])) # [head,cbs]
+			att_node = self.softmax(tf.reshape(att_node,[self.n_head,n_neighbors])) # [head,cbs]
 			att_node = self.dropout(att_node)
 			att_node = tf.transpose(att_node,[1,0]) # 方便使用tf.scatter_nd函数
 			scatter = tf.scatter_nd(tf.expand_dims(neighbors,1), tf.squeeze(att_node), shape) 
